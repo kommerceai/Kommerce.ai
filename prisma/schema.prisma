@@ -1,0 +1,258 @@
+// prisma/schema.prisma
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id            String    @id @default(cuid())
+  email         String    @unique
+  name          String?
+  passwordHash  String
+  role          Role      @default(ACCOUNT_MANAGER)
+  clients       Client[]
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+}
+
+enum Role {
+  SUPER_ADMIN
+  ACCOUNT_MANAGER
+  ANALYST
+  CLIENT_VIEW
+}
+
+model Client {
+  id                    String            @id @default(cuid())
+  name                  String
+  email                 String
+  accountManagerId      String
+  accountManager        User              @relation(fields: [accountManagerId], references: [id])
+
+  // Integrations
+  shopifyDomain         String?
+  shopifyAccessToken    String?
+  metaAdAccountId       String?
+  metaAccessToken       String?
+  tiktokShopId          String?
+  tiktokAccessToken     String?
+
+  // Google Sheets Integration
+  googleSheetId         String?
+  googleSheetUrl        String?
+  googleAccessToken     String?
+  googleRefreshToken    String?
+  autoSyncEnabled       Boolean           @default(false)
+  syncFrequency         SyncFrequency     @default(DAILY)
+
+  // Branding
+  logoUrl               String?
+  brandColorPrimary     String?
+  brandColorSecondary   String?
+
+  // Relations
+  financialProfile      FinancialProfile?
+  dailyMetrics          DailyMetrics[]
+  dailyFinancials       DailyFinancials[]
+  alertRules            AlertRule[]
+  alerts                Alert[]
+  reports               Report[]
+  reportSchedules       ReportSchedule[]
+
+  createdAt             DateTime          @default(now())
+  updatedAt             DateTime          @updatedAt
+
+  @@index([accountManagerId])
+}
+
+enum SyncFrequency {
+  HOURLY
+  DAILY
+  WEEKLY
+}
+
+model FinancialProfile {
+  id                      String   @id @default(cuid())
+  clientId                String   @unique
+  client                  Client   @relation(fields: [clientId], references: [id], onDelete: Cascade)
+
+  cogsPercentage          Decimal  @db.Decimal(5, 2)
+  paymentProcessingFee    Decimal  @db.Decimal(5, 2)
+  merchantAccountFee      Decimal  @db.Decimal(10, 2)
+  shippingCostPerOrder    Decimal  @db.Decimal(10, 2)
+  fulfillmentCostPerOrder Decimal  @db.Decimal(10, 2)
+  targetMarginPercentage  Decimal  @db.Decimal(5, 2)
+
+  updatedAt               DateTime @updatedAt
+}
+
+model DailyMetrics {
+  id          String        @id @default(cuid())
+  clientId    String
+  client      Client        @relation(fields: [clientId], references: [id], onDelete: Cascade)
+
+  date        DateTime      @db.Date
+  platform    Platform
+
+  revenue     Decimal       @db.Decimal(12, 2)
+  orders      Int
+  adSpend     Decimal       @db.Decimal(12, 2)
+  impressions Int
+  clicks      Int
+  aov         Decimal       @db.Decimal(10, 2)
+  roas        Decimal       @db.Decimal(10, 2)
+  cpa         Decimal       @db.Decimal(10, 2)
+
+  createdAt   DateTime      @default(now())
+
+  @@unique([clientId, date, platform])
+  @@index([clientId, date])
+  @@index([date])
+}
+
+enum Platform {
+  SHOPIFY
+  META
+  TIKTOK_SHOP
+  TIKTOK_ADS
+}
+
+model DailyFinancials {
+  id                      String           @id @default(cuid())
+  clientId                String
+  client                  Client           @relation(fields: [clientId], references: [id], onDelete: Cascade)
+
+  date                    DateTime         @db.Date
+
+  aov                     Decimal          @db.Decimal(10, 2)
+  totalCostPerOrder       Decimal          @db.Decimal(10, 2)
+  profitPerOrder          Decimal          @db.Decimal(10, 2)
+  actualMarginPercentage  Decimal          @db.Decimal(5, 2)
+
+  cpaTarget               Decimal          @db.Decimal(10, 2)
+  roasTarget              Decimal          @db.Decimal(10, 2)
+  actualCpa               Decimal          @db.Decimal(10, 2)
+  actualRoas              Decimal          @db.Decimal(10, 2)
+
+  status                  MarginStatus
+
+  createdAt               DateTime         @default(now())
+
+  @@unique([clientId, date])
+  @@index([clientId, date])
+}
+
+enum MarginStatus {
+  GREEN
+  YELLOW
+  RED
+}
+
+model AlertRule {
+  id                String      @id @default(cuid())
+  clientId          String
+  client            Client      @relation(fields: [clientId], references: [id], onDelete: Cascade)
+
+  type              AlertType
+  threshold         Decimal     @db.Decimal(10, 2)
+  comparisonPeriod  Int
+  channels          Channel[]
+
+  isActive          Boolean     @default(true)
+  createdAt         DateTime    @default(now())
+
+  alerts            Alert[]
+
+  @@index([clientId])
+}
+
+enum AlertType {
+  ROAS_DROP
+  BUDGET_OVERSPEND
+  MARGIN_ALERT
+  CPA_SPIKE
+  ORDER_DROP
+  LEARNING_PHASE
+}
+
+enum Channel {
+  EMAIL
+  SLACK
+  IN_APP
+}
+
+model Alert {
+  id              String      @id @default(cuid())
+  clientId        String
+  client          Client      @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  ruleId          String
+  rule            AlertRule   @relation(fields: [ruleId], references: [id], onDelete: Cascade)
+
+  type            AlertType
+  message         String
+  severity        Severity
+
+  triggeredAt     DateTime    @default(now())
+  acknowledgedAt  DateTime?
+  snoozedUntil    DateTime?
+  resolvedAt      DateTime?
+
+  @@index([clientId, triggeredAt])
+  @@index([triggeredAt])
+}
+
+enum Severity {
+  LOW
+  MEDIUM
+  HIGH
+}
+
+model Report {
+  id         String       @id @default(cuid())
+  clientId   String
+  client     Client       @relation(fields: [clientId], references: [id], onDelete: Cascade)
+
+  type       ReportType
+  startDate  DateTime     @db.Date
+  endDate    DateTime     @db.Date
+
+  pdfUrl     String?
+  sentAt     DateTime?
+
+  createdAt  DateTime     @default(now())
+
+  @@index([clientId, createdAt])
+}
+
+enum ReportType {
+  WEEKLY
+  MONTHLY
+  CUSTOM
+}
+
+model ReportSchedule {
+  id          String      @id @default(cuid())
+  clientId    String
+  client      Client      @relation(fields: [clientId], references: [id], onDelete: Cascade)
+
+  frequency   Frequency
+  dayOfWeek   Int?
+  dayOfMonth  Int?
+  time        String
+  recipients  String[]
+
+  isActive    Boolean     @default(true)
+  createdAt   DateTime    @default(now())
+
+  @@index([clientId])
+}
+
+enum Frequency {
+  WEEKLY
+  MONTHLY
+}

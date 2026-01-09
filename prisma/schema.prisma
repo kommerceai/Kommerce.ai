@@ -1,0 +1,144 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id        String   @id @default(cuid())
+  email     String   @unique
+  name      String?
+  role      UserRole @default(ANALYST)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+enum UserRole {
+  SUPER_ADMIN
+  ACCOUNT_MANAGER
+  ANALYST
+  CLIENT_VIEW
+}
+
+model Client {
+  id                  String            @id @default(cuid())
+  name                String
+  email               String?
+  status              ClientStatus      @default(ACTIVE)
+
+  // Google Sheets Integration
+  googleSheetId       String?
+  googleSheetUrl      String?
+  googleAccessToken   String?           @db.Text
+  googleRefreshToken  String?           @db.Text
+  googleTokenExpiry   DateTime?
+  lastSyncedAt        DateTime?
+
+  // Other Platform Integrations (for future use)
+  shopifyAccessToken  String?           @db.Text
+  shopifyShopDomain   String?
+  metaAccessToken     String?           @db.Text
+  tiktokAccessToken   String?           @db.Text
+
+  // Financial Configuration
+  defaultMarginTarget Float?            @default(30.0)
+  currency            String            @default("USD")
+
+  createdAt           DateTime          @default(now())
+  updatedAt           DateTime          @updatedAt
+
+  dailyMetrics        DailyMetrics[]
+  dailyFinancials     DailyFinancials[]
+
+  @@index([status])
+  @@index([googleSheetId])
+}
+
+enum ClientStatus {
+  ACTIVE
+  PAUSED
+  INACTIVE
+}
+
+enum Platform {
+  SHOPIFY
+  META_ADS
+  TIKTOK_SHOP
+  TIKTOK_ADS
+  GOOGLE_ADS
+}
+
+model DailyMetrics {
+  id              String   @id @default(cuid())
+  clientId        String
+  client          Client   @relation(fields: [clientId], references: [id], onDelete: Cascade)
+
+  date            DateTime
+  platform        Platform
+
+  // Revenue & Orders
+  revenue         Float    @default(0)
+  orders          Int      @default(0)
+  averageOrderValue Float  @default(0)
+
+  // Ad Spend & Performance
+  adSpend         Float    @default(0)
+  impressions     Int      @default(0)
+  clicks          Int      @default(0)
+  roas            Float    @default(0)
+  cpa             Float    @default(0)
+
+  // Metrics
+  conversionRate  Float    @default(0)
+  clickThroughRate Float   @default(0)
+
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@unique([clientId, date, platform])
+  @@index([clientId, date])
+  @@index([date])
+}
+
+model DailyFinancials {
+  id                  String   @id @default(cuid())
+  clientId            String
+  client              Client   @relation(fields: [clientId], references: [id], onDelete: Cascade)
+
+  date                DateTime
+
+  // P&L Data
+  totalRevenue        Float    @default(0)
+  totalOrders         Int      @default(0)
+  totalAdSpend        Float    @default(0)
+
+  // Costs
+  cogsPercentage      Float    @default(0)
+  cogsAmount          Float    @default(0)
+  shippingCost        Float    @default(0)
+  platformFees        Float    @default(0)
+  otherCosts          Float    @default(0)
+
+  // Calculated Fields
+  grossProfit         Float    @default(0)
+  netProfit           Float    @default(0)
+  marginPercentage    Float    @default(0)
+  profitPerOrder      Float    @default(0)
+
+  // Performance Indicators
+  totalRoas           Float    @default(0)
+  breakEven           Boolean  @default(false)
+
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+
+  @@unique([clientId, date])
+  @@index([clientId, date])
+  @@index([date])
+}

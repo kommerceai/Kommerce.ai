@@ -55,16 +55,23 @@ async function main() {
   ];
 
   for (const clientData of clients) {
-    const client = await prisma.client.upsert({
+    // Check if client exists
+    let client = await prisma.client.findFirst({
       where: { email: clientData.email },
-      update: {},
-      create: {
-        name: clientData.name,
-        email: clientData.email,
-        accountManagerId: user.id,
-      },
     });
-    console.log(`✅ Created client: ${client.name}`);
+
+    if (!client) {
+      client = await prisma.client.create({
+        data: {
+          name: clientData.name,
+          email: clientData.email,
+          accountManagerId: user.id,
+        },
+      });
+      console.log(`✅ Created client: ${client.name}`);
+    } else {
+      console.log(`✅ Client already exists: ${client.name}`);
+    }
 
     // Create financial profile
     const financialProfile = await prisma.financialProfile.upsert({
